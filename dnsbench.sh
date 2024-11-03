@@ -1,76 +1,128 @@
 #!/bin/bash
 
-#Check for required utilities
-if ! which bc > /dev/null
-    then
-        echo "bc was not found. Please install bc."
+# DNS Benchmark Script 2024
+# Tests DNS resolver performance across multiple providers
+# Compatible with Linux and macOS
+
+# Error handling
+set -e
+trap 'echo "Error on line $LINENO. Exit code: $?"' ERR
+
+# Function to check if a command exists
+check_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
+
+# Check for required utilities
+if ! check_command bc; then
+    echo "Error: 'bc' calculator not found. Please install bc."
+    exit 1
+fi
+
+# Check for DNS tools (dig or drill)
+if ! check_command dig; then
+    if check_command drill; then
+        alias dig="drill"
+        echo "Using 'drill' instead of 'dig'"
+    else
+        echo "Error: Neither 'dig' nor 'drill' found. Please install dnsutils/bind-tools or ldns."
         exit 1
+    fi
 fi
 
-if ! which dig > /dev/null
-    then
-    	if which drill > /dev/null
-   			then
-    		alias dig="drill"
-    	else
-        	echo "neither dig nor drill was not found. Please install dnsutils or ldns."
-        	exit 1
-    	fi
-fi
-
-
+# Modern DNS Providers for 2024
 PROVIDERS="
-1.1.1.1#cloudflare 
-1.0.0.1#cloudflare2nd 
-4.2.2.2#level3
-4.2.2.1#level3
-208.67.222.222#opendns
-208.67.220.220#opendns
-209.18.47.61#Spectrum1st  
-209.18.47.62#Spectrum2nd  
-8.8.8.8#google 
-8.8.4.4#google2nd
-9.9.9.9#quad9 
-185.228.168.168#cleanbrowsing 
-176.103.130.132#adguard 
-156.154.70.3#neustar 
-8.26.56.26#comodo
-"
+1.1.1.1#Cloudflare-1
+1.0.0.1#Cloudflare-2
+8.8.8.8#Google-1
+8.8.4.4#Google-2
+9.9.9.9#Quad9-1
+149.112.112.112#Quad9-2
+208.67.222.222#OpenDNS-1
+208.67.220.220#OpenDNS-2
+94.140.14.14#AdGuard-1
+94.140.15.15#AdGuard-2
+185.228.168.168#CleanBrowsing-1
+185.228.169.168#CleanBrowsing-2
+76.76.2.0#Control-D-1
+76.76.10.0#Control-D-2
+4.2.2.1#Level3-1
+4.2.2.2#Level3-2"
 
-# Domains to test. Duplicated domains are ok
-DOMAINS2TEST="www.google.com amazon.com facebook.com www.youtube.com www.reddit.com  wikipedia.org twitter.com gmail.com 
-www.google.com whatsapp.com"
+# Popular domains to test (including modern services)
+DOMAINS2TEST="www.google.com amazon.com facebook.com netflix.com microsoft.com
+apple.com twitter.com instagram.com linkedin.com zoom.us teams.microsoft.com
+github.com youtube.com tiktok.com reddit.com"
 
+# Function to perform DNS query and get response time
+get_dns_response_time() {
+    local dns_server=$1
+    local domain=$2
+    local timeout=2  # 2 second timeout
+    
+    # Use timeout command if available
+    if command -v timeout >/dev/null 2>&1; then
+        result=$(timeout $timeout dig @"$dns_server" "$domain" +tries=1 +time=2 +stats 2>/dev/null | grep "Query time:" | awk '{print $4}')
+    else
+        result=$(dig @"$dns_server" "$domain" +tries=1 +time=2 +stats 2>/dev/null | grep "Query time:" | awk '{print $4}')
+    fi
+    
+    # Check if we got a result
+    if [ -z "$result" ]; then
+        echo "1000"  # Timeout value in ms
+    else
+        echo "$result"
+    fi
+}
 
-totaldomains=0
-printf "%-15s" ""
-for d in $DOMAINS2TEST; do
-    totaldomains=$((totaldomains + 1))
-    printf "%-8s" "test$totaldomains"
+# Print header
+printf "%-18s" "DNS Provider"
+total_domains=0
+for domain in $DOMAINS2TEST; do
+    total_domains=$((total_domains + 1))
+    printf "%-8s" "T$total_domains"
 done
-printf "%-8s" "Average"
+printf "%-10s" "Average"
 echo ""
 
+# Print separator line
+printf "%0.s-" {1..120}
+echo ""
 
-for p in $PROVIDERS; do
-    pip=`echo $p| cut -d '#' -f 1`;
-    pname=`echo $p| cut -d '#' -f 2`;
-    ftime=0
-
-    printf "%-15s" "$pname"
-    for d in $DOMAINS2TEST; do
-        ttime=`dig +stats @$pip $d |grep "Query time:" | cut -d : -f 2- | cut -d " " -f 2`
-	if [ -z "$ttime" ]; then
-	    #let's have time out be 1s = 1000ms
-	    ttime=1000
-	fi
-        printf "%-8s" "$ttime ms"
-        ftime=$((ftime + ttime))
+# Test each provider
+for provider in $PROVIDERS; do
+    # Split provider info
+    dns_ip=$(echo "$provider" | cut -d'#' -f1)
+    dns_name=$(echo "$provider" | cut -d'#' -f2)
+    
+    # Initialize total time
+    total_time=0
+    
+    # Print provider name
+    printf "%-18s" "$dns_name"
+    
+    # Test each domain
+    for domain in $DOMAINS2TEST; do
+        response_time=$(get_dns_response_time "$dns_ip" "$domain")
+        total_time=$((total_time + response_time))
+        printf "%-8s" "${response_time}ms"
     done
-    avg=`bc -lq <<< "scale=2; $ftime/$totaldomains"`
-
-    echo "  $avg"
+    
+    # Calculate and print average
+    avg=$(echo "scale=2; $total_time/$total_domains" | bc)
+    printf "%-10s" "$avg"
+    echo ""
 done
 
+# Print separator line
+printf "%0.s-" {1..120}
+echo ""
 
-exit 0;
+echo -e "\nTest completed at $(date)"
+echo "Total domains tested: $total_domains"
+echo "Total DNS providers tested: $(echo "$PROVIDERS" | grep -c '^')"
+
+exit 0
