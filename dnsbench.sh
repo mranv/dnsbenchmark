@@ -12,84 +12,68 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 DIM='\033[2m'
 
-# Function for centered text with padding
-center_text() {
-    local text="$1"
-    local width="$2"
-    local padding=$(( (width - ${#text}) / 2 ))
-    printf "%${padding}s%s%${padding}s\n" "" "$text" ""
+# Progress bar function - Fixed version
+progress_bar() {
+    local duration=${1:-0.01}
+    local width=50
+    local progress=0
+    
+    while [ $progress -le 100 ]; do
+        local completed=$((progress*width/100))
+        local remaining=$((width-completed))
+        
+        printf "\r[${CYAN}"
+        printf "%${completed}s" '' | tr ' ' '█'
+        printf "${NC}"
+        printf "%${remaining}s" '' | tr ' ' '░'
+        printf "] ${YELLOW}%3d%%${NC}" "$progress"
+        
+        progress=$((progress+2))
+        sleep "$duration"
+    done
+    echo
 }
 
-# ASCII Art Banner
+# Error handling with cleanup
+cleanup() {
+    tput cnorm # Restore cursor
+    exit 0
+}
+
+trap cleanup EXIT
+trap 'echo -e "\n${RED}❌ Error occurred. Exiting...${NC}"; cleanup' ERR
+
+# Hide cursor during progress
+tput civis
+
+# Print banner function
 print_banner() {
     echo -e "${CYAN}"
-    echo '╔══════════════════════════════════════════════════════════════════════════════╗'
-    echo '║                                                                              ║'
-    echo '║   ██████╗ ███╗   ██╗███████╗    ████████╗███████╗███████╗████████╗         ║'
-    echo '║   ██╔══██╗████╗  ██║██╔════╝    ╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝         ║'
-    echo '║   ██║  ██║██╔██╗ ██║███████╗       ██║   █████╗  ███████╗   ██║            ║'
-    echo '║   ██║  ██║██║╚██╗██║╚════██║       ██║   ██╔══╝  ╚════██║   ██║            ║'
-    echo '║   ██████╔╝██║ ╚████║███████║       ██║   ███████╗███████║   ██║            ║'
-    echo '║   ╚═════╝ ╚═╝  ╚═══╝╚══════╝       ╚═╝   ╚══════╝╚══════╝   ╚═╝            ║'
-    echo '║                                                                              ║'
-    echo '╚══════════════════════════════════════════════════════════════════════════════╝'
+    cat << "EOF"
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║   ██████╗ ███╗   ██╗███████╗    ████████╗███████╗███████╗████████╗           ║
+║   ██╔══██╗████╗  ██║██╔════╝    ╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝           ║
+║   ██║  ██║██╔██╗ ██║███████╗       ██║   █████╗  ███████╗   ██║              ║
+║   ██║  ██║██║╚██╗██║╚════██║       ██║   ██╔══╝  ╚════██║   ██║              ║
+║   ██████╔╝██║ ╚████║███████║       ██║   ███████╗███████║   ██║              ║
+║   ╚═════╝ ╚═╝  ╚═══╝╚══════╝       ╚═╝   ╚══════╝╚══════╝   ╚═╝              ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+EOF
     echo -e "${NC}"
     echo -e "${PURPLE}                        DNS Benchmark Tool v2.0 (2024)${NC}"
     echo -e "${DIM}                   Performance testing for DNS resolvers${NC}"
     echo
 }
 
-# Spinner animation
-spinner() {
-    local pid=$1
-    local delay=0.1
-    local spinstr='|/-\'
-    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
-        local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-        printf "\b\b\b\b\b\b"
-    done
-    printf "    \b\b\b\b"
-}
-
-# Error handling
-set -e
-trap 'echo -e "${RED}❌ Error on line $LINENO. Exit code: $?${NC}"' ERR
-
-# Function to check if a command exists
-check_command() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        return 1
-    fi
-    return 0
-}
-
-# Progress bar function
-progress_bar() {
-    local duration=$1
-    local width=50
-    local progress=0
-    local fill
-    local empty
-    while [ $progress -le 100 ]; do
-        let fill=($progress*$width/100)
-        let empty=($width-$fill)
-        printf "\r[${CYAN}"
-        printf "%${fill}s" '' | tr ' ' '█'
-        printf "${NC}"
-        printf "%${empty}s" '' | tr ' ' '░'
-        printf "] ${YELLOW}$progress%%${NC}"
-        let progress=progress+2
-        sleep "$duration"
-    done
-    echo
-}
-
-# Check prerequisites with nice formatting
+# Check prerequisites with improved formatting
 echo -e "\n${BOLD}🔍 Checking Prerequisites...${NC}"
 sleep 0.5
+
+check_command() {
+    command -v "$1" >/dev/null 2>&1
+}
 
 if ! check_command bc; then
     echo -e "${RED}❌ 'bc' calculator not found. Please install bc.${NC}"
@@ -113,9 +97,8 @@ fi
 # Print banner
 print_banner
 
-# Modern DNS Providers for 2024
-PROVIDERS="
-1.1.1.1#Cloudflare-1
+# Modern DNS Providers for 2024 (kept same)
+PROVIDERS="1.1.1.1#Cloudflare-1
 1.0.0.1#Cloudflare-2
 8.8.8.8#Google-1
 8.8.4.4#Google-2
@@ -132,45 +115,36 @@ PROVIDERS="
 4.2.2.1#Level3-1
 4.2.2.2#Level3-2"
 
-# Popular domains to test
+# Test domains (kept same)
 DOMAINS2TEST="www.google.com amazon.com facebook.com netflix.com microsoft.com
 apple.com twitter.com instagram.com linkedin.com zoom.us teams.microsoft.com
 github.com youtube.com tiktok.com reddit.com"
 
-# Function to perform DNS query and get response time
-get_dns_response_time() {
-    local dns_server=$1
-    local domain=$2
-    local timeout=2
-    
-    if command -v timeout >/dev/null 2>&1; then
-        result=$(timeout $timeout dig @"$dns_server" "$domain" +tries=1 +time=2 +stats 2>/dev/null | grep "Query time:" | awk '{print $4}')
-    else
-        result=$(dig @"$dns_server" "$domain" +tries=1 +time=2 +stats 2>/dev/null | grep "Query time:" | awk '{print $4}')
-    fi
-    
-    if [ -z "$result" ]; then
-        echo "1000"
-    else
-        echo "$result"
-    fi
-}
-
 # Print test information
 echo -e "\n${BOLD}🎯 Test Configuration${NC}"
 echo -e "${DIM}────────────────────────${NC}"
-echo -e "${CYAN}➜ Total DNS Providers:${NC} $(echo "$PROVIDERS" | grep -c '^')"
+echo -e "${CYAN}➜ Total DNS Providers:${NC} $(echo "$PROVIDERS" | wc -l)"
 echo -e "${CYAN}➜ Domains to Test:${NC} $(echo "$DOMAINS2TEST" | wc -w)"
 echo -e "${CYAN}➜ Timeout:${NC} 2 seconds"
 echo
 
-# Preparing test environment
+# Initialize test environment with fixed progress bar
 echo -e "${BOLD}⚡ Initializing Test Environment${NC}"
-progress_bar 0.03
-echo
+progress_bar 0.02
 
-# Print header with fancy formatting
-printf "${BOLD}%-18s${NC}" "DNS Provider"
+# Function to perform DNS query with timeout
+get_dns_response_time() {
+    local dns_server=$1
+    local domain=$2
+    local timeout=2
+    local result
+    
+    result=$(timeout $timeout dig @"$dns_server" "$domain" +tries=1 +time=2 +stats 2>/dev/null | grep "Query time:" | awk '{print $4}')
+    echo "${result:-1000}"
+}
+
+# Print header with formatting
+printf "\n${BOLD}%-18s${NC}" "DNS Provider"
 total_domains=0
 for domain in $DOMAINS2TEST; do
     total_domains=$((total_domains + 1))
@@ -179,15 +153,15 @@ done
 printf "${YELLOW}%-10s${NC}" "Average"
 echo
 
-# Print separator line
+# Print separator
 echo -e "${DIM}$(printf '%0.s─' {1..120})${NC}"
 
 # Test each provider
 for provider in $PROVIDERS; do
     dns_ip=$(echo "$provider" | cut -d'#' -f1)
     dns_name=$(echo "$provider" | cut -d'#' -f2)
-    
     total_time=0
+    
     printf "${BOLD}%-18s${NC}" "$dns_name"
     
     for domain in $DOMAINS2TEST; do
@@ -216,7 +190,7 @@ for provider in $PROVIDERS; do
     echo
 done
 
-# Print separator line
+# Print separator
 echo -e "${DIM}$(printf '%0.s─' {1..120})${NC}"
 
 # Summary
@@ -224,11 +198,14 @@ echo -e "\n${BOLD}📊 Test Summary${NC}"
 echo -e "${DIM}────────────────${NC}"
 echo -e "${CYAN}➜ Test completed at:${NC} $(date)"
 echo -e "${CYAN}➜ Total domains tested:${NC} $total_domains"
-echo -e "${CYAN}➜ Total DNS providers tested:${NC} $(echo "$PROVIDERS" | grep -c '^')"
+echo -e "${CYAN}➜ Total DNS providers tested:${NC} $(echo "$PROVIDERS" | wc -l)"
 
 # Footer
-echo -e "\n${DIM}Report generated by DNS Benchmark Tool v2.0${NC}"
+echo -e "\n${DIM}Report generated by DNS Benchmark Tool v2.0 By Anubhav Gain${NC}"
 echo -e "${DIM}Copyright © 2024 - All rights reserved${NC}"
 echo
+
+# Restore cursor
+tput cnorm
 
 exit 0
